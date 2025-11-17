@@ -67,7 +67,7 @@ function App() {
       alert('Completa todos los campos');
       return;
     }
-
+    
     const { data } = await supabase
       .from('usuarios')
       .select()
