@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Plus, X, LogOut, FileSpreadsheet, Clock, BarChart3, Upload, Image as ImageIcon, Trash2 } from 'lucide-react';
+import { Search, Plus, X, LogOut, FileSpreadsheet, Clock, BarChart3, Upload, Image as ImageIcon } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import emailjs from '@emailjs/browser';
 import * as XLSX from 'xlsx';
-import { BarChart, Bar, PieChart as RePieChart, Pie, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 const SUPABASE_URL = 'https://pqzawvguspvjjwuqgyfo.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBxemF3dmd1c3B2amp3dXFneWZvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM0MDg1ODMsImV4cCI6MjA3ODk4NDU4M30.KyQ99Ghaw-uTEwbGEExx6IyLiYnTD1r1s3mEOxvjQng';
@@ -13,8 +13,6 @@ const EMAILJS_TEMPLATE_ID = 'reclamo_nuevo';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 emailjs.init(EMAILJS_PUBLIC_KEY);
-
-const COLORES = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#6b7280'];
 
 function App() {
   const [usuario, setUsuario] = useState(null);
@@ -54,7 +52,7 @@ function App() {
 
   const verificarConexion = async () => {
     try {
-      const { data } = await supabase.from('usuarios').select('count');
+      await supabase.from('usuarios').select('count');
       setCargando(false);
     } catch (error) {
       console.error('Error:', error);
@@ -67,20 +65,25 @@ function App() {
       alert('Completa todos los campos');
       return;
     }
-    
-    const { data } = await supabase
-      .from('usuarios')
-      .select()
-      .eq('email', loginForm.email)
-      .eq('password', loginForm.password)
-      .single();
 
-    if (data) {
-      setUsuario(data);
-      setMostrarLogin(false);
-      cargarDatos();
-    } else {
-      alert('Credenciales incorrectas');
+    try {
+      const { data } = await supabase
+        .from('usuarios')
+        .select()
+        .eq('email', loginForm.email)
+        .eq('password', loginForm.password)
+        .single();
+
+      if (data) {
+        setUsuario(data);
+        setMostrarLogin(false);
+        await cargarDatos();
+      } else {
+        alert('Credenciales incorrectas');
+      }
+    } catch (error) {
+      console.error('Error login:', error);
+      alert('Error al iniciar sesión');
     }
   };
 
@@ -115,36 +118,46 @@ function App() {
   };
 
   const cargarDatos = async () => {
-    const { data: reclamosData } = await supabase
-      .from('reclamos')
-      .select('*')
-      .order('created_at', { ascending: false });
-    
-    const { data: usuariosData } = await supabase
-      .from('usuarios')
-      .select('*');
+    try {
+      const { data: reclamosData } = await supabase
+        .from('reclamos')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      const { data: usuariosData } = await supabase
+        .from('usuarios')
+        .select('*');
 
-    if (reclamosData) setReclamos(reclamosData);
-    if (usuariosData) setUsuarios(usuariosData);
+      if (reclamosData) setReclamos(reclamosData);
+      if (usuariosData) setUsuarios(usuariosData);
+    } catch (error) {
+      console.error('Error cargando datos:', error);
+    }
   };
 
   const subirImagenes = async (files) => {
     setImagenesSubiendo(true);
     const urlsImagenes = [];
 
-    for (const file of files) {
-      const nombreArchivo = `${Date.now()}_${file.name}`;
-      const { data, error } = await supabase.storage
-        .from('reclamos-imagenes')
-        .upload(nombreArchivo, file);
-
-      if (data) {
-        const { data: urlData } = supabase.storage
+    try {
+      for (const file of files) {
+        const nombreArchivo = `${Date.now()}_${file.name}`;
+        const { data, error } = await supabase.storage
           .from('reclamos-imagenes')
-          .getPublicUrl(nombreArchivo);
-        
-        urlsImagenes.push(urlData.publicUrl);
+          .upload(nombreArchivo, file);
+
+        if (data) {
+          const { data: urlData } = supabase.storage
+            .from('reclamos-imagenes')
+            .getPublicUrl(nombreArchivo);
+          
+          urlsImagenes.push(urlData.publicUrl);
+        } else {
+          console.error('Error subiendo imagen:', error);
+        }
       }
+    } catch (error) {
+      console.error('Error en subida:', error);
     }
 
     setImagenesSubiendo(false);
@@ -282,7 +295,7 @@ function App() {
       mensaje = `Estimado/a ${reclamo.nombre_cliente},\n\nHemos recibido su reclamo #${reclamo.id}.\n\nSucursal: ${sucursal?.nombre}\nUrgencia: ${reclamo.urgencia}\n\nGracias,\nGRDS`;
     } else if (tipo === 'resuelto') {
       asunto = `✅ Reclamo #${reclamo.id} Resuelto - GRDS`;
-      mensaje = `Estimado/a ${reclamo.nombre_cliente},\n\nSu reclamo #${reclamo.id} ha sido resuelto.\n\nGracias por su paciencia.\nGRDS`;
+      mensaje = `Estimado/a ${reclamo.nombre_cliente},\n\nSu reclamo #${reclamo.id} ha sido resuelto.\n\nGracias,\nGRDS`;
     } else if (tipo === 'en_proceso') {
       asunto = `🔄 Reclamo #${reclamo.id} En Proceso - GRDS`;
       mensaje = `Estimado/a ${reclamo.nombre_cliente},\n\nSu reclamo #${reclamo.id} está siendo atendido.\n\nGRDS`;
@@ -298,7 +311,7 @@ function App() {
       });
       console.log('✅ Email enviado');
     } catch (error) {
-      console.error('Error al enviar email:', error);
+      console.error('Error email:', error);
     }
   };
 
@@ -310,8 +323,7 @@ function App() {
       Email: r.email_cliente,
       Sucursal: r.sucursal,
       Estado: r.estado,
-      Urgencia: r.urgencia,
-      Imagenes: JSON.parse(r.imagenes || '[]').length
+      Urgencia: r.urgencia
     }));
     const ws = XLSX.utils.json_to_sheet(datos);
     const wb = XLSX.utils.book_new();
@@ -330,7 +342,6 @@ function App() {
     return cumpleFiltro && cumpleBusqueda;
   });
 
-  // Datos para gráficos
   const dataPorEstado = [
     { nombre: 'Pendiente', valor: reclamos.filter(r => r.estado === 'pendiente').length, color: '#facc15' },
     { nombre: 'En Proceso', valor: reclamos.filter(r => r.estado === 'en_proceso').length, color: '#3b82f6' },
@@ -349,14 +360,6 @@ function App() {
     { nombre: 'Baja', valor: reclamos.filter(r => r.urgencia === 'baja').length, color: '#22c55e' }
   ].filter(d => d.valor > 0);
 
-  const dataPorCategoria = [
-    { nombre: 'General', valor: reclamos.filter(r => r.categoria === 'general').length },
-    { nombre: 'Producto', valor: reclamos.filter(r => r.categoria === 'producto').length },
-    { nombre: 'Servicio', valor: reclamos.filter(r => r.categoria === 'servicio').length },
-    { nombre: 'Facturación', valor: reclamos.filter(r => r.categoria === 'facturacion').length },
-    { nombre: 'Entrega', valor: reclamos.filter(r => r.categoria === 'entrega').length }
-  ].filter(d => d.valor > 0);
-
   const getEstadoColor = (estado) => {
     if (estado === 'pendiente') return 'bg-yellow-100 text-yellow-800';
     if (estado === 'en_proceso') return 'bg-blue-100 text-blue-800';
@@ -371,7 +374,7 @@ function App() {
     return 'bg-green-500 text-white';
   };
 
-if (cargando) {
+  if (cargando) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-600 to-purple-700 flex items-center justify-center">
         <div className="text-white text-2xl font-bold">Cargando GRDS...</div>
@@ -584,11 +587,11 @@ if (cargando) {
                 Dashboard de Estadísticas
               </h3>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="bg-white p-6 rounded-lg shadow">
                   <h4 className="font-semibold mb-4 text-gray-800">📊 Reclamos por Estado</h4>
                   <ResponsiveContainer width="100%" height={250}>
-                    <RePieChart>
+                    <PieChart>
                       <Pie
                         data={dataPorEstado}
                         cx="50%"
@@ -603,14 +606,14 @@ if (cargando) {
                         ))}
                       </Pie>
                       <Tooltip />
-                    </RePieChart>
+                    </PieChart>
                   </ResponsiveContainer>
                 </div>
 
                 <div className="bg-white p-6 rounded-lg shadow">
                   <h4 className="font-semibold mb-4 text-gray-800">⚡ Por Nivel de Urgencia</h4>
                   <ResponsiveContainer width="100%" height={250}>
-                    <RePieChart>
+                    <PieChart>
                       <Pie
                         data={dataPorUrgencia}
                         cx="50%"
@@ -625,13 +628,11 @@ if (cargando) {
                         ))}
                       </Pie>
                       <Tooltip />
-                    </RePieChart>
+                    </PieChart>
                   </ResponsiveContainer>
                 </div>
-              </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="bg-white p-6 rounded-lg shadow">
+                <div className="bg-white p-6 rounded-lg shadow md:col-span-2">
                   <h4 className="font-semibold mb-4 text-gray-800">📍 Reclamos por Sucursal</h4>
                   <ResponsiveContainer width="100%" height={250}>
                     <BarChart data={dataPorSucursal}>
@@ -642,49 +643,6 @@ if (cargando) {
                       <Bar dataKey="cantidad" fill="#3b82f6" />
                     </BarChart>
                   </ResponsiveContainer>
-                </div>
-
-                <div className="bg-white p-6 rounded-lg shadow">
-                  <h4 className="font-semibold mb-4 text-gray-800">📋 Por Categoría</h4>
-                  <ResponsiveContainer width="100%" height={250}>
-                    <BarChart data={dataPorCategoria}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="nombre" />
-                      <YAxis />
-                      <Tooltip />
-                      <Bar dataKey="valor" fill="#8b5cf6" />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-
-              <div className="bg-white p-6 rounded-lg shadow mt-6">
-                <h4 className="font-semibold mb-4 text-gray-800">📈 Resumen Ejecutivo</h4>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                  <div className="text-center p-4 bg-red-50 rounded-lg">
-                    <div className="text-3xl font-bold text-red-600">
-                      {reclamos.filter(r => r.urgencia === 'critica' && r.estado === 'pendiente').length}
-                    </div>
-                    <div className="text-sm text-red-700 mt-1">Críticos Pendientes</div>
-                  </div>
-                  <div className="text-center p-4 bg-green-50 rounded-lg">
-                    <div className="text-3xl font-bold text-green-600">
-                      {reclamos.length > 0 ? Math.round((reclamos.filter(r => r.estado === 'resuelto').length / reclamos.length) * 100) : 0}%
-                    </div>
-                    <div className="text-sm text-green-700 mt-1">Tasa Resolución</div>
-                  </div>
-                  <div className="text-center p-4 bg-blue-50 rounded-lg">
-                    <div className="text-3xl font-bold text-blue-600">
-                      {dataPorSucursal.length > 0 ? dataPorSucursal.reduce((max, suc) => suc.cantidad > max.cantidad ? suc : max).nombre : 'N/A'}
-                    </div>
-                    <div className="text-sm text-blue-700 mt-1">Sucursal Top</div>
-                  </div>
-                  <div className="text-center p-4 bg-purple-50 rounded-lg">
-                    <div className="text-3xl font-bold text-purple-600">
-                      {reclamos.filter(r => JSON.parse(r.imagenes || '[]').length > 0).length}
-                    </div>
-                    <div className="text-sm text-purple-700 mt-1">Con Imágenes</div>
-                  </div>
                 </div>
               </div>
             </div>
@@ -807,7 +765,7 @@ if (cargando) {
               <button
                 onClick={handleSubmit}
                 disabled={imagenesSubiendo}
-                className="mt-4 bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 font-semibold disabled:bg-gray-400 disabled:cursor-not-allowed"
+                className="mt-4 bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 font-semibold disabled:bg-gray-400"
               >
                 {imagenesSubiendo ? 'Procesando...' : 'Registrar Reclamo'}
               </button>
@@ -874,8 +832,8 @@ if (cargando) {
                       
                       {imagenes.length > 0 && (
                         <div className="mb-4">
-                          <details className="cursor-pointer">
-                            <summary className="text-sm font-medium text-blue-600 hover:text-blue-700 mb-2">
+                          <details>
+                            <summary className="text-sm font-medium text-blue-600 hover:text-blue-700 mb-2 cursor-pointer">
                               Ver {imagenes.length} imagen{imagenes.length !== 1 ? 'es' : ''} adjunta{imagenes.length !== 1 ? 's' : ''}
                             </summary>
                             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 mt-3">
@@ -885,7 +843,6 @@ if (cargando) {
                                   href={img} 
                                   target="_blank" 
                                   rel="noopener noreferrer"
-                                  className="block"
                                 >
                                   <img
                                     src={img}
@@ -934,7 +891,7 @@ if (cargando) {
                       <select
                         value={reclamo.estado}
                         onChange={(e) => cambiarEstado(reclamo.id, e.target.value)}
-                        className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                        className="px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
                       >
                         <option value="pendiente">Pendiente</option>
                         <option value="en_proceso">En Proceso</option>
@@ -945,7 +902,7 @@ if (cargando) {
                         <select
                           value={reclamo.asignado_a || ''}
                           onChange={(e) => asignarReclamo(reclamo.id, e.target.value)}
-                          className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500"
+                          className="px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-purple-500"
                         >
                           <option value="">Sin asignar</option>
                           {usuarios.filter(u => u.rol !== 'admin').map(u => (
