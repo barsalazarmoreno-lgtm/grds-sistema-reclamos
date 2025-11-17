@@ -161,7 +161,7 @@ function App() {
         descripcion: '', categoria: 'general', urgencia: 'media', sucursal: ''
       });
       setMostrarFormulario(false);
-      alert('✅ Reclamo registrado y email enviado');
+      alert('✅ Reclamo registrado exitosamente');
     }
   };
 
