@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Plus, X, LogOut, FileSpreadsheet, Clock } from 'lucide-react';
+import { Search, Plus, X, LogOut, FileSpreadsheet, Clock, BarChart3, Upload, Image as ImageIcon, Trash2 } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import emailjs from '@emailjs/browser';
 import * as XLSX from 'xlsx';
+import { BarChart, Bar, PieChart as RePieChart, Pie, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 const SUPABASE_URL = 'https://pqzawvguspvjjwuqgyfo.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBxemF3dmd1c3B2amp3dXFneWZvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM0MDg1ODMsImV4cCI6MjA3ODk4NDU4M30.KyQ99Ghaw-uTEwbGEExx6IyLiYnTD1r1s3mEOxvjQng';
@@ -13,6 +14,8 @@ const EMAILJS_TEMPLATE_ID = 'reclamo_nuevo';
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 emailjs.init(EMAILJS_PUBLIC_KEY);
 
+const COLORES = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#6b7280'];
+
 function App() {
   const [usuario, setUsuario] = useState(null);
   const [reclamos, setReclamos] = useState([]);
@@ -21,15 +24,17 @@ function App() {
   const [mostrarFormulario, setMostrarFormulario] = useState(false);
   const [mostrarLogin, setMostrarLogin] = useState(true);
   const [mostrarRegistro, setMostrarRegistro] = useState(false);
+  const [mostrarGraficos, setMostrarGraficos] = useState(false);
   const [filtro, setFiltro] = useState('todos');
   const [busqueda, setBusqueda] = useState('');
+  const [imagenesSubiendo, setImagenesSubiendo] = useState(false);
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
   const [registroForm, setRegistroForm] = useState({ 
     nombre: '', email: '', password: '', rol: 'operador', sucursal: ''
   });
   const [formulario, setFormulario] = useState({
     nombre: '', email: '', telefono: '', asunto: '',
-    descripcion: '', categoria: 'general', urgencia: 'media', sucursal: ''
+    descripcion: '', categoria: 'general', urgencia: 'media', sucursal: '', imagenes: []
   });
 
   const sucursales = [
@@ -123,6 +128,45 @@ function App() {
     if (usuariosData) setUsuarios(usuariosData);
   };
 
+  const subirImagenes = async (files) => {
+    setImagenesSubiendo(true);
+    const urlsImagenes = [];
+
+    for (const file of files) {
+      const nombreArchivo = `${Date.now()}_${file.name}`;
+      const { data, error } = await supabase.storage
+        .from('reclamos-imagenes')
+        .upload(nombreArchivo, file);
+
+      if (data) {
+        const { data: urlData } = supabase.storage
+          .from('reclamos-imagenes')
+          .getPublicUrl(nombreArchivo);
+        
+        urlsImagenes.push(urlData.publicUrl);
+      }
+    }
+
+    setImagenesSubiendo(false);
+    return urlsImagenes;
+  };
+
+  const handleImagenesChange = async (e) => {
+    const files = Array.from(e.target.files);
+    if (files.length === 0) return;
+
+    const urls = await subirImagenes(files);
+    setFormulario({
+      ...formulario,
+      imagenes: [...formulario.imagenes, ...urls]
+    });
+  };
+
+  const eliminarImagen = (index) => {
+    const nuevasImagenes = formulario.imagenes.filter((_, i) => i !== index);
+    setFormulario({ ...formulario, imagenes: nuevasImagenes });
+  };
+
   const handleSubmit = async () => {
     if (!formulario.nombre || !formulario.email || !formulario.asunto || !formulario.sucursal) {
       alert('Completa los campos obligatorios (*)');
@@ -140,6 +184,7 @@ function App() {
       sucursal: formulario.sucursal,
       estado: 'pendiente',
       creado_por: usuario?.nombre || 'Sistema',
+      imagenes: JSON.stringify(formulario.imagenes),
       historial: JSON.stringify([{
         fecha: new Date().toISOString(),
         accion: 'Reclamo creado',
@@ -158,7 +203,7 @@ function App() {
       enviarEmail(data, 'creado');
       setFormulario({
         nombre: '', email: '', telefono: '', asunto: '',
-        descripcion: '', categoria: 'general', urgencia: 'media', sucursal: ''
+        descripcion: '', categoria: 'general', urgencia: 'media', sucursal: '', imagenes: []
       });
       setMostrarFormulario(false);
       alert('✅ Reclamo registrado exitosamente');
@@ -265,7 +310,8 @@ function App() {
       Email: r.email_cliente,
       Sucursal: r.sucursal,
       Estado: r.estado,
-      Urgencia: r.urgencia
+      Urgencia: r.urgencia,
+      Imagenes: JSON.parse(r.imagenes || '[]').length
     }));
     const ws = XLSX.utils.json_to_sheet(datos);
     const wb = XLSX.utils.book_new();
@@ -284,6 +330,33 @@ function App() {
     return cumpleFiltro && cumpleBusqueda;
   });
 
+  // Datos para gráficos
+  const dataPorEstado = [
+    { nombre: 'Pendiente', valor: reclamos.filter(r => r.estado === 'pendiente').length, color: '#facc15' },
+    { nombre: 'En Proceso', valor: reclamos.filter(r => r.estado === 'en_proceso').length, color: '#3b82f6' },
+    { nombre: 'Resuelto', valor: reclamos.filter(r => r.estado === 'resuelto').length, color: '#22c55e' }
+  ].filter(d => d.valor > 0);
+
+  const dataPorSucursal = sucursales.map(suc => ({
+    nombre: suc.nombre,
+    cantidad: reclamos.filter(r => r.sucursal === suc.id).length
+  })).filter(d => d.cantidad > 0);
+
+  const dataPorUrgencia = [
+    { nombre: 'Crítica', valor: reclamos.filter(r => r.urgencia === 'critica').length, color: '#dc2626' },
+    { nombre: 'Alta', valor: reclamos.filter(r => r.urgencia === 'alta').length, color: '#f97316' },
+    { nombre: 'Media', valor: reclamos.filter(r => r.urgencia === 'media').length, color: '#facc15' },
+    { nombre: 'Baja', valor: reclamos.filter(r => r.urgencia === 'baja').length, color: '#22c55e' }
+  ].filter(d => d.valor > 0);
+
+  const dataPorCategoria = [
+    { nombre: 'General', valor: reclamos.filter(r => r.categoria === 'general').length },
+    { nombre: 'Producto', valor: reclamos.filter(r => r.categoria === 'producto').length },
+    { nombre: 'Servicio', valor: reclamos.filter(r => r.categoria === 'servicio').length },
+    { nombre: 'Facturación', valor: reclamos.filter(r => r.categoria === 'facturacion').length },
+    { nombre: 'Entrega', valor: reclamos.filter(r => r.categoria === 'entrega').length }
+  ].filter(d => d.valor > 0);
+
   const getEstadoColor = (estado) => {
     if (estado === 'pendiente') return 'bg-yellow-100 text-yellow-800';
     if (estado === 'en_proceso') return 'bg-blue-100 text-blue-800';
@@ -298,7 +371,7 @@ function App() {
     return 'bg-green-500 text-white';
   };
 
-  if (cargando) {
+if (cargando) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-600 to-purple-700 flex items-center justify-center">
         <div className="text-white text-2xl font-bold">Cargando GRDS...</div>
@@ -351,8 +424,7 @@ function App() {
               >
                 Crear Cuenta
               </button>
-
-          </>
+            </>
           ) : (
             <>
               <div className="space-y-4">
@@ -447,18 +519,27 @@ function App() {
 
       <div className="max-w-7xl mx-auto p-6">
         <div className="bg-white rounded-lg shadow p-6 mb-6">
-          <div className="flex justify-between items-center mb-6">
+          <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
             <div>
               <h2 className="text-2xl font-bold">Panel de Control</h2>
               <p className="text-gray-600">Base de datos en tiempo real</p>
             </div>
-            <button
-              onClick={() => setMostrarFormulario(!mostrarFormulario)}
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2"
-            >
-              {mostrarFormulario ? <X className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
-              {mostrarFormulario ? 'Cancelar' : 'Nuevo Reclamo'}
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setMostrarGraficos(!mostrarGraficos)}
+                className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 flex items-center gap-2"
+              >
+                {mostrarGraficos ? <X className="w-5 h-5" /> : <BarChart3 className="w-5 h-5" />}
+                {mostrarGraficos ? 'Ocultar' : 'Gráficos'}
+              </button>
+              <button
+                onClick={() => setMostrarFormulario(!mostrarFormulario)}
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2"
+              >
+                {mostrarFormulario ? <X className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
+                {mostrarFormulario ? 'Cancelar' : 'Nuevo Reclamo'}
+              </button>
+            </div>
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
@@ -494,6 +575,119 @@ function App() {
               <FileSpreadsheet className="w-5 h-5" />
               Exportar Excel
             </button>
+          )}
+
+          {mostrarGraficos && reclamos.length > 0 && (
+            <div className="bg-gradient-to-br from-purple-50 to-blue-50 p-6 rounded-lg mb-6 border-2 border-purple-200">
+              <h3 className="text-2xl font-bold mb-6 flex items-center gap-2">
+                <BarChart3 className="w-6 h-6 text-purple-600" />
+                Dashboard de Estadísticas
+              </h3>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                <div className="bg-white p-6 rounded-lg shadow">
+                  <h4 className="font-semibold mb-4 text-gray-800">📊 Reclamos por Estado</h4>
+                  <ResponsiveContainer width="100%" height={250}>
+                    <RePieChart>
+                      <Pie
+                        data={dataPorEstado}
+                        cx="50%"
+                        cy="50%"
+                        labelLine={false}
+                        label={({ nombre, valor }) => `${nombre}: ${valor}`}
+                        outerRadius={80}
+                        dataKey="valor"
+                      >
+                        {dataPorEstado.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip />
+                    </RePieChart>
+                  </ResponsiveContainer>
+                </div>
+
+                <div className="bg-white p-6 rounded-lg shadow">
+                  <h4 className="font-semibold mb-4 text-gray-800">⚡ Por Nivel de Urgencia</h4>
+                  <ResponsiveContainer width="100%" height={250}>
+                    <RePieChart>
+                      <Pie
+                        data={dataPorUrgencia}
+                        cx="50%"
+                        cy="50%"
+                        labelLine={false}
+                        label={({ nombre, valor }) => `${nombre}: ${valor}`}
+                        outerRadius={80}
+                        dataKey="valor"
+                      >
+                        {dataPorUrgencia.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip />
+                    </RePieChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="bg-white p-6 rounded-lg shadow">
+                  <h4 className="font-semibold mb-4 text-gray-800">📍 Reclamos por Sucursal</h4>
+                  <ResponsiveContainer width="100%" height={250}>
+                    <BarChart data={dataPorSucursal}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="nombre" angle={-45} textAnchor="end" height={80} />
+                      <YAxis />
+                      <Tooltip />
+                      <Bar dataKey="cantidad" fill="#3b82f6" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+
+                <div className="bg-white p-6 rounded-lg shadow">
+                  <h4 className="font-semibold mb-4 text-gray-800">📋 Por Categoría</h4>
+                  <ResponsiveContainer width="100%" height={250}>
+                    <BarChart data={dataPorCategoria}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="nombre" />
+                      <YAxis />
+                      <Tooltip />
+                      <Bar dataKey="valor" fill="#8b5cf6" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className="bg-white p-6 rounded-lg shadow mt-6">
+                <h4 className="font-semibold mb-4 text-gray-800">📈 Resumen Ejecutivo</h4>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                  <div className="text-center p-4 bg-red-50 rounded-lg">
+                    <div className="text-3xl font-bold text-red-600">
+                      {reclamos.filter(r => r.urgencia === 'critica' && r.estado === 'pendiente').length}
+                    </div>
+                    <div className="text-sm text-red-700 mt-1">Críticos Pendientes</div>
+                  </div>
+                  <div className="text-center p-4 bg-green-50 rounded-lg">
+                    <div className="text-3xl font-bold text-green-600">
+                      {reclamos.length > 0 ? Math.round((reclamos.filter(r => r.estado === 'resuelto').length / reclamos.length) * 100) : 0}%
+                    </div>
+                    <div className="text-sm text-green-700 mt-1">Tasa Resolución</div>
+                  </div>
+                  <div className="text-center p-4 bg-blue-50 rounded-lg">
+                    <div className="text-3xl font-bold text-blue-600">
+                      {dataPorSucursal.length > 0 ? dataPorSucursal.reduce((max, suc) => suc.cantidad > max.cantidad ? suc : max).nombre : 'N/A'}
+                    </div>
+                    <div className="text-sm text-blue-700 mt-1">Sucursal Top</div>
+                  </div>
+                  <div className="text-center p-4 bg-purple-50 rounded-lg">
+                    <div className="text-3xl font-bold text-purple-600">
+                      {reclamos.filter(r => JSON.parse(r.imagenes || '[]').length > 0).length}
+                    </div>
+                    <div className="text-sm text-purple-700 mt-1">Con Imágenes</div>
+                  </div>
+                </div>
+              </div>
+            </div>
           )}
 
           {mostrarFormulario && (
@@ -566,12 +760,56 @@ function App() {
                   onChange={(e) => setFormulario({...formulario, descripcion: e.target.value})}
                   className="md:col-span-2 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
                 />
+                
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    📸 Adjuntar Imágenes (opcional)
+                  </label>
+                  <div className="flex items-center gap-4">
+                    <label className="cursor-pointer bg-gray-100 hover:bg-gray-200 px-4 py-2 rounded-lg flex items-center gap-2 transition">
+                      <Upload className="w-5 h-5" />
+                      {imagenesSubiendo ? 'Subiendo...' : 'Seleccionar Imágenes'}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        onChange={handleImagenesChange}
+                        disabled={imagenesSubiendo}
+                        className="hidden"
+                      />
+                    </label>
+                    {imagenesSubiendo && (
+                      <div className="text-blue-600 text-sm">Subiendo imágenes...</div>
+                    )}
+                  </div>
+                  
+                  {formulario.imagenes.length > 0 && (
+                    <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                      {formulario.imagenes.map((img, index) => (
+                        <div key={index} className="relative group">
+                          <img
+                            src={img}
+                            alt={`Imagen ${index + 1}`}
+                            className="w-full h-32 object-cover rounded-lg border-2 border-gray-200"
+                          />
+                          <button
+                            onClick={() => eliminarImagen(index)}
+                            className="absolute top-2 right-2 bg-red-500 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
               <button
                 onClick={handleSubmit}
-                className="mt-4 bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 font-semibold"
+                disabled={imagenesSubiendo}
+                className="mt-4 bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 font-semibold disabled:bg-gray-400 disabled:cursor-not-allowed"
               >
-                Registrar Reclamo
+                {imagenesSubiendo ? 'Procesando...' : 'Registrar Reclamo'}
               </button>
             </div>
           )}
@@ -606,93 +844,129 @@ function App() {
               <p className="text-gray-500 text-lg">No hay reclamos para mostrar</p>
             </div>
           ) : (
-            reclamosFiltrados.map(reclamo => (
-              <div key={reclamo.id} className="bg-white rounded-lg shadow p-6 hover:shadow-md transition" style={{borderLeft: `4px solid ${reclamo.urgencia === 'critica' ? '#dc2626' : reclamo.urgencia === 'alta' ? '#f97316' : reclamo.urgencia === 'media' ? '#facc15' : '#22c55e'}`}}>
-                <div className="flex flex-col lg:flex-row justify-between gap-4">
-                  <div className="flex-1">
-                    <div className="flex items-start gap-3 mb-3 flex-wrap">
-                      <div className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${getUrgenciaColor(reclamo.urgencia)}`}>
-                        {reclamo.urgencia}
-                      </div>
-                      <div className={`px-3 py-1 rounded-full text-sm font-medium ${getEstadoColor(reclamo.estado)}`}>
-                        {reclamo.estado === 'pendiente' ? 'Pendiente' : 
-                         reclamo.estado === 'en_proceso' ? 'En Proceso' : 'Resuelto'}
-                      </div>
-                      <span className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-sm">
-                        {reclamo.categoria}
-                      </span>
-                    </div>
-                    
-                    <h3 className="text-xl font-semibold text-gray-900 mb-2">{reclamo.asunto}</h3>
-                    <p className="text-gray-600 mb-3">{reclamo.descripcion}</p>
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-gray-600 mb-3">
-                      <div><span className="font-medium">👤 Cliente:</span> {reclamo.nombre_cliente}</div>
-                      <div><span className="font-medium">✉️ Email:</span> {reclamo.email_cliente}</div>
-                      {reclamo.telefono_cliente && <div><span className="font-medium">📞 Teléfono:</span> {reclamo.telefono_cliente}</div>}
-                      <div><span className="font-medium">📍 Sucursal:</span> {sucursales.find(s => s.id === reclamo.sucursal)?.nombre}</div>
-                      <div><span className="font-medium">📅 Fecha:</span> {new Date(reclamo.created_at).toLocaleDateString('es-ES')}</div>
-                      <div><span className="font-medium">🆔 ID:</span> #{reclamo.id}</div>
-                      <div><span className="font-medium">👨‍💼 Creado:</span> {reclamo.creado_por}</div>
-                      {reclamo.asignado_a && <div><span className="font-medium">📌 Asignado:</span> {reclamo.asignado_a}</div>}
-                    </div>
-
-                    {reclamo.historial && JSON.parse(reclamo.historial).length > 1 && (
-                      <details className="mt-3">
-                        <summary className="cursor-pointer text-sm text-blue-600 font-medium hover:text-blue-700">
-                          Ver historial ({JSON.parse(reclamo.historial).length} eventos)
-                        </summary>
-                        <div className="mt-2 bg-gray-50 rounded p-3 space-y-2">
-                          {JSON.parse(reclamo.historial).map((evento, idx) => (
-                            <div key={idx} className="text-xs text-gray-600 flex items-start gap-2">
-                              <Clock className="w-3 h-3 mt-0.5 flex-shrink-0" />
-                              <div>
-                                <span className="font-medium">{evento.accion}</span>
-                                <span className="text-gray-400"> • {new Date(evento.fecha).toLocaleString('es-ES')} • {evento.usuario}</span>
-                              </div>
-                            </div>
-                          ))}
+            reclamosFiltrados.map(reclamo => {
+              const imagenes = JSON.parse(reclamo.imagenes || '[]');
+              return (
+                <div key={reclamo.id} className="bg-white rounded-lg shadow p-6 hover:shadow-md transition" style={{borderLeft: `4px solid ${reclamo.urgencia === 'critica' ? '#dc2626' : reclamo.urgencia === 'alta' ? '#f97316' : reclamo.urgencia === 'media' ? '#facc15' : '#22c55e'}`}}>
+                  <div className="flex flex-col lg:flex-row justify-between gap-4">
+                    <div className="flex-1">
+                      <div className="flex items-start gap-3 mb-3 flex-wrap">
+                        <div className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${getUrgenciaColor(reclamo.urgencia)}`}>
+                          {reclamo.urgencia}
                         </div>
-                      </details>
-                    )}
-                  </div>
-                  
-                  <div className="flex flex-col gap-2 lg:w-48">
-                    <select
-                      value={reclamo.estado}
-                      onChange={(e) => cambiarEstado(reclamo.id, e.target.value)}
-                      className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="pendiente">Pendiente</option>
-                      <option value="en_proceso">En Proceso</option>
-                      <option value="resuelto">Resuelto</option>
-                    </select>
+                        <div className={`px-3 py-1 rounded-full text-sm font-medium ${getEstadoColor(reclamo.estado)}`}>
+                          {reclamo.estado === 'pendiente' ? 'Pendiente' : 
+                           reclamo.estado === 'en_proceso' ? 'En Proceso' : 'Resuelto'}
+                        </div>
+                        <span className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-sm">
+                          {reclamo.categoria}
+                        </span>
+                        {imagenes.length > 0 && (
+                          <span className="px-2 py-1 bg-purple-100 text-purple-700 rounded text-sm flex items-center gap-1">
+                            <ImageIcon className="w-4 h-4" />
+                            {imagenes.length}
+                          </span>
+                        )}
+                      </div>
+                      
+                      <h3 className="text-xl font-semibold text-gray-900 mb-2">{reclamo.asunto}</h3>
+                      <p className="text-gray-600 mb-3">{reclamo.descripcion}</p>
+                      
+                      {imagenes.length > 0 && (
+                        <div className="mb-4">
+                          <details className="cursor-pointer">
+                            <summary className="text-sm font-medium text-blue-600 hover:text-blue-700 mb-2">
+                              Ver {imagenes.length} imagen{imagenes.length !== 1 ? 'es' : ''} adjunta{imagenes.length !== 1 ? 's' : ''}
+                            </summary>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 mt-3">
+                              {imagenes.map((img, idx) => (
+                                <a 
+                                  key={idx} 
+                                  href={img} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer"
+                                  className="block"
+                                >
+                                  <img
+                                    src={img}
+                                    alt={`Imagen ${idx + 1}`}
+                                    className="w-full h-32 object-cover rounded-lg border-2 border-gray-200 hover:border-blue-500 transition cursor-pointer"
+                                  />
+                                </a>
+                              ))}
+                            </div>
+                          </details>
+                        </div>
+                      )}
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-gray-600 mb-3">
+                        <div><span className="font-medium">👤 Cliente:</span> {reclamo.nombre_cliente}</div>
+                        <div><span className="font-medium">✉️ Email:</span> {reclamo.email_cliente}</div>
+                        {reclamo.telefono_cliente && <div><span className="font-medium">📞 Teléfono:</span> {reclamo.telefono_cliente}</div>}
+                        <div><span className="font-medium">📍 Sucursal:</span> {sucursales.find(s => s.id === reclamo.sucursal)?.nombre}</div>
+                        <div><span className="font-medium">📅 Fecha:</span> {new Date(reclamo.created_at).toLocaleDateString('es-ES')}</div>
+                        <div><span className="font-medium">🆔 ID:</span> #{reclamo.id}</div>
+                        <div><span className="font-medium">👨‍💼 Creado:</span> {reclamo.creado_por}</div>
+                        {reclamo.asignado_a && <div><span className="font-medium">📌 Asignado:</span> {reclamo.asignado_a}</div>}
+                      </div>
+
+                      {reclamo.historial && JSON.parse(reclamo.historial).length > 1 && (
+                        <details className="mt-3">
+                          <summary className="cursor-pointer text-sm text-blue-600 font-medium hover:text-blue-700">
+                            Ver historial ({JSON.parse(reclamo.historial).length} eventos)
+                          </summary>
+                          <div className="mt-2 bg-gray-50 rounded p-3 space-y-2">
+                            {JSON.parse(reclamo.historial).map((evento, idx) => (
+                              <div key={idx} className="text-xs text-gray-600 flex items-start gap-2">
+                                <Clock className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                                <div>
+                                  <span className="font-medium">{evento.accion}</span>
+                                  <span className="text-gray-400"> • {new Date(evento.fecha).toLocaleString('es-ES')} • {evento.usuario}</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </details>
+                      )}
+                    </div>
                     
-                    {(usuario?.rol === 'admin' || usuario?.rol === 'supervisor') && (
+                    <div className="flex flex-col gap-2 lg:w-48">
                       <select
-                        value={reclamo.asignado_a || ''}
-                        onChange={(e) => asignarReclamo(reclamo.id, e.target.value)}
-                        className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500"
+                        value={reclamo.estado}
+                        onChange={(e) => cambiarEstado(reclamo.id, e.target.value)}
+                        className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
                       >
-                        <option value="">Sin asignar</option>
-                        {usuarios.filter(u => u.rol !== 'admin').map(u => (
-                          <option key={u.id} value={u.nombre}>{u.nombre}</option>
-                        ))}
+                        <option value="pendiente">Pendiente</option>
+                        <option value="en_proceso">En Proceso</option>
+                        <option value="resuelto">Resuelto</option>
                       </select>
-                    )}
-                    
-                    {usuario?.rol === 'admin' && (
-                      <button
-                        onClick={() => eliminarReclamo(reclamo.id)}
-                        className="px-3 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition text-sm font-medium"
-                      >
-                        Eliminar
-                      </button>
-                    )}
+                      
+                      {(usuario?.rol === 'admin' || usuario?.rol === 'supervisor') && (
+                        <select
+                          value={reclamo.asignado_a || ''}
+                          onChange={(e) => asignarReclamo(reclamo.id, e.target.value)}
+                          className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500"
+                        >
+                          <option value="">Sin asignar</option>
+                          {usuarios.filter(u => u.rol !== 'admin').map(u => (
+                            <option key={u.id} value={u.nombre}>{u.nombre}</option>
+                          ))}
+                        </select>
+                      )}
+                      
+                      {usuario?.rol === 'admin' && (
+                        <button
+                          onClick={() => eliminarReclamo(reclamo.id)}
+                          className="px-3 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition text-sm font-medium"
+                        >
+                          Eliminar
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       </div>
