@@ -3,7 +3,7 @@ import { Search, Plus, X, LogOut, FileSpreadsheet, Clock, BarChart3, Upload, Ima
 import { createClient } from '@supabase/supabase-js';
 import emailjs from '@emailjs/browser';
 import * as XLSX from 'xlsx';
-import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 const SUPABASE_URL = 'https://pqzawvguspvjjwuqgyfo.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBxemF3dmd1c3B2amp3dXFneWZvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM0MDg1ODMsImV4cCI6MjA3ODk4NDU4M30.KyQ99Ghaw-uTEwbGEExx6IyLiYnTD1r1s3mEOxvjQng';
@@ -13,6 +13,15 @@ const EMAILJS_TEMPLATE_ID = 'reclamo_nuevo';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 emailjs.init(EMAILJS_PUBLIC_KEY);
+
+// Función helper para parsear JSON de forma segura
+const parseJSON = (str, defaultValue = null) => {
+  try {
+    return str ? JSON.parse(str) : defaultValue;
+  } catch (e) {
+    return defaultValue;
+  }
+};
 
 function App() {
   const [usuario, setUsuario] = useState(null);
@@ -93,28 +102,32 @@ function App() {
       return;
     }
 
-    const { data: existente } = await supabase
-      .from('usuarios')
-      .select()
-      .eq('email', registroForm.email)
-      .single();
+    try {
+      const { data: existente } = await supabase
+        .from('usuarios')
+        .select()
+        .eq('email', registroForm.email)
+        .single();
 
-    if (existente) {
-      alert('Email ya registrado');
-      return;
+      if (existente) {
+        alert('Email ya registrado');
+        return;
+      }
+
+      await supabase.from('usuarios').insert({
+        nombre: registroForm.nombre,
+        email: registroForm.email,
+        password: registroForm.password,
+        rol: registroForm.rol,
+        sucursal: registroForm.sucursal
+      });
+
+      setRegistroForm({ nombre: '', email: '', password: '', rol: 'operador', sucursal: '' });
+      setMostrarRegistro(false);
+      alert('Usuario registrado exitosamente');
+    } catch (error) {
+      console.error('Error registro:', error);
     }
-
-    await supabase.from('usuarios').insert({
-      nombre: registroForm.nombre,
-      email: registroForm.email,
-      password: registroForm.password,
-      rol: registroForm.rol,
-      sucursal: registroForm.sucursal
-    });
-
-    setRegistroForm({ nombre: '', email: '', password: '', rol: 'operador', sucursal: '' });
-    setMostrarRegistro(false);
-    alert('Usuario registrado exitosamente');
   };
 
   const cargarDatos = async () => {
@@ -225,7 +238,7 @@ function App() {
 
   const cambiarEstado = async (id, nuevoEstado) => {
     const reclamo = reclamos.find(r => r.id === id);
-    const historial = JSON.parse(reclamo.historial || '[]');
+    const historial = parseJSON(reclamo.historial, []);
     
     const { data } = await supabase
       .from('reclamos')
@@ -251,7 +264,7 @@ function App() {
 
   const asignarReclamo = async (id, usuarioAsignado) => {
     const reclamo = reclamos.find(r => r.id === id);
-    const historial = JSON.parse(reclamo.historial || '[]');
+    const historial = parseJSON(reclamo.historial, []);
 
     const { data } = await supabase
       .from('reclamos')
@@ -633,7 +646,8 @@ function App() {
                 </div>
 
                 <div className="bg-white p-6 rounded-lg shadow md:col-span-2">
-                  <h4 className="font-semibold mb-4 text-gray-800">📍 Reclamos por Sucursal</h4>
+                  <h4 className="font-semibold mb-4 text-gray-800">
+                    📍 Reclamos por Sucursal</h4>
                   <ResponsiveContainer width="100%" height={250}>
                     <BarChart data={dataPorSucursal}>
                       <CartesianGrid strokeDasharray="3 3" />
@@ -803,7 +817,9 @@ function App() {
             </div>
           ) : (
             reclamosFiltrados.map(reclamo => {
-              const imagenes = JSON.parse(reclamo.imagenes || '[]');
+              const imagenes = parseJSON(reclamo.imagenes, []);
+              const historial = parseJSON(reclamo.historial, []);
+              
               return (
                 <div key={reclamo.id} className="bg-white rounded-lg shadow p-6 hover:shadow-md transition" style={{borderLeft: `4px solid ${reclamo.urgencia === 'critica' ? '#dc2626' : reclamo.urgencia === 'alta' ? '#f97316' : reclamo.urgencia === 'media' ? '#facc15' : '#22c55e'}`}}>
                   <div className="flex flex-col lg:flex-row justify-between gap-4">
@@ -867,13 +883,13 @@ function App() {
                         {reclamo.asignado_a && <div><span className="font-medium">📌 Asignado:</span> {reclamo.asignado_a}</div>}
                       </div>
 
-                      {reclamo.historial && JSON.parse(reclamo.historial).length > 1 && (
+                      {historial.length > 1 && (
                         <details className="mt-3">
                           <summary className="cursor-pointer text-sm text-blue-600 font-medium hover:text-blue-700">
-                            Ver historial ({JSON.parse(reclamo.historial).length} eventos)
+                            Ver historial ({historial.length} eventos)
                           </summary>
                           <div className="mt-2 bg-gray-50 rounded p-3 space-y-2">
-                            {JSON.parse(reclamo.historial).map((evento, idx) => (
+                            {historial.map((evento, idx) => (
                               <div key={idx} className="text-xs text-gray-600 flex items-start gap-2">
                                 <Clock className="w-3 h-3 mt-0.5 flex-shrink-0" />
                                 <div>
