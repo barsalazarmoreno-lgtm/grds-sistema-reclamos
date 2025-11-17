@@ -352,12 +352,7 @@ function App() {
                 Crear Cuenta
               </button>
 
-              <div className="mt-6 p-4 bg-blue-50 rounded-lg text-sm">
-                <p className="font-semibold text-blue-800">👤 Cuenta admin:</p>
-                <p className="text-blue-700">barsalazarmoreno@gmail.com</p>
-                <p className="text-blue-700">Contraseña: admin123</p>
-              </div>
-            </>
+          </>
           ) : (
             <>
               <div className="space-y-4">
