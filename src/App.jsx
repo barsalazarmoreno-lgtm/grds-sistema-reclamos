@@ -7,7 +7,7 @@ import * as XLSX from 'xlsx';
 const SUPABASE_URL = 'https://pqzawvguspvjjwuqgyfo.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBxemF3dmd1c3B2amp3dXFneWZvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM0MDg1ODMsImV4cCI6MjA3ODk4NDU4M30.KyQ99Ghaw-uTEwbGEExx6IyLiYnTD1r1s3mEOxvjQng';
 const EMAILJS_PUBLIC_KEY = 'Y0nd9sEq3OTgK4fKj';
-const EMAILJS_SERVICE_ID = 'GRDS Reclamos';
+const EMAILJS_SERVICE_ID = 'grds_reclamos';
 const EMAILJS_TEMPLATE_ID = 'reclamo_nuevo';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -161,7 +161,7 @@ function App() {
         descripcion: '', categoria: 'general', urgencia: 'media', sucursal: ''
       });
       setMostrarFormulario(false);
-      alert('✅ Reclamo registrado exitosamente');
+      alert('✅ Reclamo registrado exitosamente y correo enviado a cliente');
     }
   };
 
