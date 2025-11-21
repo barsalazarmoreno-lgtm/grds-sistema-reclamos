@@ -34,6 +34,8 @@ function App() {
   const [mostrarGraficos, setMostrarGraficos] = useState(false);
   const [filtro, setFiltro] = useState('todos');
   const [busqueda, setBusqueda] = useState('');
+  const [fechaDesde, setFechaDesde] = useState('');
+  const [fechaHasta, setFechaHasta] = useState('');
   const [imagenesSubiendo, setImagenesSubiendo] = useState(false);
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
   const [registroForm, setRegistroForm] = useState({ 
@@ -41,7 +43,7 @@ function App() {
   });
   const [formulario, setFormulario] = useState({
     nombre: '', email: '', telefono: '', asunto: '',
-    descripcion: '', categoria: 'general', urgencia: 'media', sucursal: '', imagenes: []
+    descripcion: '', categoria: 'general', urgencia: 'media', sucursal: '', fecha_reclamo: '', imagenes: []
   });
 
   const sucursales = [
@@ -194,7 +196,7 @@ function App() {
   };
 
   const handleSubmit = async () => {
-    if (!formulario.nombre || !formulario.email || !formulario.asunto || !formulario.sucursal) {
+    if (!formulario.nombre || !formulario.email || !formulario.asunto || !formulario.sucursal || !formulario.fecha_reclamo) {
       alert('Completa los campos obligatorios (*)');
       return;
     }
@@ -208,6 +210,7 @@ function App() {
       categoria: formulario.categoria,
       urgencia: formulario.urgencia,
       sucursal: formulario.sucursal,
+      fecha_reclamo: formulario.fecha_reclamo,
       estado: 'pendiente',
       creado_por: usuario?.nombre || 'Sistema',
       imagenes: JSON.stringify(formulario.imagenes),
@@ -229,7 +232,7 @@ function App() {
       enviarEmail(data, 'creado');
       setFormulario({
         nombre: '', email: '', telefono: '', asunto: '',
-        descripcion: '', categoria: 'general', urgencia: 'media', sucursal: '', imagenes: []
+        descripcion: '', categoria: 'general', urgencia: 'media', sucursal: '', fecha_reclamo: '', imagenes: []
       });
       setMostrarFormulario(false);
       alert('✅ Reclamo registrado exitosamente');
@@ -331,7 +334,8 @@ function App() {
   const exportarExcel = () => {
     const datos = reclamosFiltrados.map(r => ({
       ID: r.id,
-      Fecha: new Date(r.created_at).toLocaleDateString('es-ES'),
+      'Fecha Reclamo': r.fecha_reclamo ? new Date(r.fecha_reclamo).toLocaleDateString('es-ES') : 'N/A',
+      'Fecha Registro': new Date(r.created_at).toLocaleDateString('es-ES'),
       Cliente: r.nombre_cliente,
       Email: r.email_cliente,
       Sucursal: r.sucursal,
@@ -349,10 +353,29 @@ function App() {
       if (r.sucursal !== usuario.sucursal) return false;
     }
     const cumpleFiltro = filtro === 'todos' || r.estado === filtro;
-    const cumpleBusqueda = !busqueda || 
+    const cumpleBusqueda = !busqueda ||
       r.nombre_cliente?.toLowerCase().includes(busqueda.toLowerCase()) ||
       r.asunto?.toLowerCase().includes(busqueda.toLowerCase());
-    return cumpleFiltro && cumpleBusqueda;
+
+    // Filtro por rango de fechas
+    let cumpleFecha = true;
+    if (r.fecha_reclamo) {
+      const fechaReclamo = new Date(r.fecha_reclamo);
+      if (fechaDesde) {
+        const desde = new Date(fechaDesde);
+        if (fechaReclamo < desde) cumpleFecha = false;
+      }
+      if (fechaHasta) {
+        const hasta = new Date(fechaHasta);
+        hasta.setHours(23, 59, 59, 999); // Incluir todo el día
+        if (fechaReclamo > hasta) cumpleFecha = false;
+      }
+    } else if (fechaDesde || fechaHasta) {
+      // Si no tiene fecha_reclamo pero se está filtrando por fecha, excluir
+      cumpleFecha = false;
+    }
+
+    return cumpleFiltro && cumpleBusqueda && cumpleFecha;
   });
 
   const dataPorEstado = [
@@ -687,6 +710,14 @@ function App() {
                   onChange={(e) => setFormulario({...formulario, telefono: e.target.value})}
                   className="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
                 />
+                <input
+                  type="date"
+                  value={formulario.fecha_reclamo}
+                  onChange={(e) => setFormulario({...formulario, fecha_reclamo: e.target.value})}
+                  className="px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                  title="Fecha del Reclamo *"
+                  placeholder="Fecha del Reclamo *"
+                />
                 <select
                   value={formulario.sucursal}
                   onChange={(e) => setFormulario({...formulario, sucursal: e.target.value})}
@@ -786,27 +817,57 @@ function App() {
             </div>
           )}
 
-          <div className="flex flex-col sm:flex-row gap-4 mb-6">
-            <div className="flex-1 relative">
-              <Search className="absolute left-3 top-3 text-gray-400 w-5 h-5" />
-              <input
-                type="text"
-                placeholder="Buscar..."
-                value={busqueda}
-                onChange={(e) => setBusqueda(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-              />
+          <div className="flex flex-col gap-4 mb-6">
+            <div className="flex flex-col sm:flex-row gap-4">
+              <div className="flex-1 relative">
+                <Search className="absolute left-3 top-3 text-gray-400 w-5 h-5" />
+                <input
+                  type="text"
+                  placeholder="Buscar..."
+                  value={busqueda}
+                  onChange={(e) => setBusqueda(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <select
+                value={filtro}
+                onChange={(e) => setFiltro(e.target.value)}
+                className="px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="todos">Todos</option>
+                <option value="pendiente">Pendientes</option>
+                <option value="en_proceso">En Proceso</option>
+                <option value="resuelto">Resueltos</option>
+              </select>
             </div>
-            <select
-              value={filtro}
-              onChange={(e) => setFiltro(e.target.value)}
-              className="px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="todos">Todos</option>
-              <option value="pendiente">Pendientes</option>
-              <option value="en_proceso">En Proceso</option>
-              <option value="resuelto">Resueltos</option>
-            </select>
+            <div className="flex flex-col sm:flex-row gap-4">
+              <div className="flex-1">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Fecha Desde:</label>
+                <input
+                  type="date"
+                  value={fechaDesde}
+                  onChange={(e) => setFechaDesde(e.target.value)}
+                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div className="flex-1">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Fecha Hasta:</label>
+                <input
+                  type="date"
+                  value={fechaHasta}
+                  onChange={(e) => setFechaHasta(e.target.value)}
+                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              {(fechaDesde || fechaHasta) && (
+                <button
+                  onClick={() => { setFechaDesde(''); setFechaHasta(''); }}
+                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition h-fit mt-auto"
+                >
+                  Limpiar Fechas
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
@@ -877,7 +938,8 @@ function App() {
                         <div><span className="font-medium">✉️ Email:</span> {reclamo.email_cliente}</div>
                         {reclamo.telefono_cliente && <div><span className="font-medium">📞 Teléfono:</span> {reclamo.telefono_cliente}</div>}
                         <div><span className="font-medium">📍 Sucursal:</span> {sucursales.find(s => s.id === reclamo.sucursal)?.nombre}</div>
-                        <div><span className="font-medium">📅 Fecha:</span> {new Date(reclamo.created_at).toLocaleDateString('es-ES')}</div>
+                        {reclamo.fecha_reclamo && <div><span className="font-medium">📅 Fecha Reclamo:</span> {new Date(reclamo.fecha_reclamo).toLocaleDateString('es-ES')}</div>}
+                        <div><span className="font-medium">📅 Fecha Registro:</span> {new Date(reclamo.created_at).toLocaleDateString('es-ES')}</div>
                         <div><span className="font-medium">🆔 ID:</span> #{reclamo.id}</div>
                         <div><span className="font-medium">👨‍💼 Creado:</span> {reclamo.creado_por}</div>
                         {reclamo.asignado_a && <div><span className="font-medium">📌 Asignado:</span> {reclamo.asignado_a}</div>}
